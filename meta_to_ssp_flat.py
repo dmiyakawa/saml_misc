@@ -3,6 +3,9 @@
 # Converts SAML metadata xml to SimpleSAMLphp's flat file format.
 #
 # This supports both IdP and SP with limited support.
+#
+# TODO: rewrite this code based on correct model reflecting real
+# SAML structure :-P
 
 import sys
 import xml.etree.ElementTree
@@ -48,6 +51,14 @@ def emit_error_and_exit(msg):
     sys.exit(1)
     pass
 
+'''
+For "RoleDescriptorType", see [SAMLMeta] 2.4.
+This whole code just support SP/IDPSSODescriptor and
+we want to ignore other kinds of descriptors.
+Note that this code does NOT enumerate all of "other
+descriptors".
+Why? Because I was too lazy.
+'''
 def is_unsupported_role_descriptor_type(elem):
     return reduce((lambda x, y: x or y in elem.tag),
                   ['AttributeAuthorityDescriptor',
@@ -58,14 +69,46 @@ def is_unsupported_role_descriptor_type(elem):
 def main(metadata_file):
     tree = xml.etree.ElementTree.parse(metadata_file)
 
-    idp_or_sp = None # Will be 'sp' or 'idp'
+    # TODO: group temporary variables here or construct
+    # class for them. Then separate this huge method
+    # into several logics.
+
+    # Will be 'sp' or 'idp'
+    idp_or_sp = None 
     entity_id = None
 
+    # A hacky variable to remember if the current
+    # element is in IDPSSODescriptor/SPSSODescriptor element
+    # or not.
+    #
+    # If not, some fields must be ignored in the following logic,
+    # which should not be in the resultant php config file for
+    # SimpleSAMLphp.
+    #
+    # e.g.
+    # KeyDescriptor for AttributeAuthorityDescriptor, which
+    # appears on Shibboleth IdP (by default), should not be
+    # remembered during this process. What we really need is
+    # a certificate (and thus KeyDescriptor) for IDPSSODescriptor.
+    #
+    # <IDPSSODescriptor protocolSupportEnumeration="...">
+    #   <KeyDescriptor>(cert A)</KeyDescriptor>
+    # </IDPSSODescriptor>
+    # <AttributeAuthorityDescriptor protocolSupportEnumeration="...">
+    #   <KeyDescriptor>(cert B)</KeyDescriptor>
+    # </AttributeAuthorityDescriptor>
+    #
+    # In the case above, only the cert A will be important for
+    # SimpleSAMLphp.
+    #
+    # XXX: is this really really really true??
     in_sso_descriptor = False
 
     # Note: one metadata may contain two certs. See [SAMLMeta] 2.4.1.1.
-    # Will prioritize: value with use='signing', value with no 'use'
-    # attribe, and value with use='encryption'
+    # This code will prioritize
+    #  - first, value with "use='signing'",
+    #  - second, value with no 'use' attribute, and
+    #  - finally, value with "use='encryption'"
     x509_cert_map = {}
     x509_cur_key = None
 
@@ -78,6 +121,10 @@ def main(metadata_file):
     single_logout_service_list = []
     artifact_resolution_service_list = []
 
+    # Iterate all elements and store some of them into temporary
+    # variables. Because this code doesn't take care of xml's
+    # correct tree structure, some ugly hacks are introduced.
+    # (e.g. in_sso_descriptor)
     for elem in tree.iter():
         # debug
         # print elem.tag
@@ -307,7 +354,9 @@ def main(metadata_file):
         p.print_line("'NameIDFormat' => '%s'," % email_ssp)
         pass
 
-    # Cert
+    # Certificate
+    # TODO: figure out how 'signing' and 'encryption' are treated
+    # technically and when they become different.
     x509_cert = None
     if x509_cert_map.has_key('signing'):
         x509_cert = x509_cert_map['signing']
