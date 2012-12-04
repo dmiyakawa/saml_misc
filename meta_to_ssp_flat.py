@@ -291,7 +291,7 @@ def main(metadata_file):
         elif acs_size == 1:
             (binding, location, index, is_default) = \
                 assertion_consumer_service_list[0]
-            p.print_line("'AssertionConsumerService' => '%s'" % binding)
+            p.print_line("'AssertionConsumerService' => '%s'," % binding)
         else:
             p.begin_block("'AssertionConsumerService' => array (", "),")
             for elem in assertion_consumer_service_list:
